@@ -1,0 +1,114 @@
+# Example demonstrating the discovery feature
+# This example shows how to conditionally run tests based on what's installed on the system
+
+# Discovery phase - these run first to determine what's on the system
+discovery:
+  # Check if auditd package is installed
+  auditd_check:
+    type: package
+    resource:
+      name: auditd
+    register: auditd_installed
+
+  # Check if systemd is present
+  systemd_check:
+    type: file
+    resource:
+      path: /run/systemd/system
+    register: has_systemd
+
+  # Check if we're running a specific OS
+  os_check:
+    type: command
+    resource:
+      command: "uname -s"
+    register: operating_system
+
+  # Check for docker installation
+  docker_check:
+    type: package
+    resource:
+      name: docker
+    register: docker_installed
+
+# Tests - these run after discovery
+# The templates use the discovered values to conditionally execute tests
+
+# Only test auditd if it's installed
+{{ if .Discovered.auditd_installed.Installed }}
+package:
+  auditd:
+    installed: true
+    meta:
+      desc: "Auditd should be installed"
+
+file:
+  /etc/audit/auditd.conf:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Auditd configuration file should exist"
+
+{{ if .Discovered.has_systemd.Exists }}
+service:
+  auditd:
+    enabled: true
+    running: true
+    meta:
+      desc: "Auditd service should be enabled and running (systemd)"
+{{ end }}
+{{ end }}
+
+# Only test docker if it's installed
+{{ if .Discovered.docker_installed.Installed }}
+package:
+  docker:
+    installed: true
+    meta:
+      desc: "Docker should be installed"
+
+service:
+  docker:
+    enabled: true
+    running: true
+    meta:
+      desc: "Docker service should be running"
+
+user:
+  docker:
+    exists: true
+    meta:
+      desc: "Docker group should exist"
+{{ end }}
+
+# OS-specific tests
+{{ if regexMatch "Linux" .Discovered.operating_system.Value }}
+file:
+  /etc/os-release:
+    exists: true
+    meta:
+      desc: "Linux systems should have /etc/os-release"
+{{ end }}
+
+{{ if regexMatch "Darwin" .Discovered.operating_system.Value }}
+file:
+  /System/Library/CoreServices/SystemVersion.plist:
+    exists: true
+    meta:
+      desc: "macOS systems should have SystemVersion.plist"
+{{ end }}
+
+# These tests always run, regardless of discoveries
+file:
+  /etc/passwd:
+    exists: true
+    filetype: file
+    meta:
+      desc: "The passwd file should always exist"
+
+  /etc/group:
+    exists: true
+    filetype: file
+    meta:
+      desc: "The group file should always exist"
+

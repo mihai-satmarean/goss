@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/goss-org/goss/resource"
+	"github.com/goss-org/goss/system"
 	"github.com/goss-org/goss/util"
 )
 
@@ -61,7 +62,8 @@ func ReadJSON(filePath string) (GossConfig, error) {
 }
 
 type TmplVars struct {
-	Vars map[string]any
+	Vars       map[string]any
+	Discovered map[string]any
 }
 
 func (t *TmplVars) Env() map[string]string {
@@ -315,4 +317,37 @@ func marshalYAML(gossConfig any) ([]byte, error) {
 
 func unmarshalYAML(data []byte, v any) error {
 	return yaml.Unmarshal(data, v)
+}
+
+// RunDiscoveries executes all discovery resources and returns a map of discovered values
+func RunDiscoveries(gossConfig GossConfig, packageManager string) (map[string]any, error) {
+	discovered := make(map[string]any)
+	
+	if len(gossConfig.Discoveries) == 0 {
+		return discovered, nil
+	}
+
+	sys := system.New(packageManager)
+	
+	for _, discovery := range gossConfig.Discoveries {
+		if discovery.Skip {
+			continue
+		}
+		
+		results := discovery.Validate(sys)
+		if len(results) > 0 {
+			result := results[0]
+			if result.Successful {
+				// Register the discovered value with the specified key
+				if register := discovery.GetRegister(); register != "" {
+					discoveredValue := discovery.GetDiscoveredValue()
+					if discoveredValue != nil {
+						discovered[register] = discoveredValue
+					}
+				}
+			}
+		}
+	}
+	
+	return discovered, nil
 }

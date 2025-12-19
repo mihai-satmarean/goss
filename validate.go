@@ -18,17 +18,13 @@ import (
 	"github.com/goss-org/goss/util"
 )
 
-func getGossConfig(vars string, varsInline string, specFile string) (cfg *GossConfig, err error) {
+func getGossConfig(vars string, varsInline string, specFile string, packageManager string) (cfg *GossConfig, err error) {
 	// handle stdin
 	var fh *os.File
 	var path, source string
 	var gossConfig GossConfig
 
-	currentTemplateFilter, err = NewTemplateFilter(vars, varsInline)
-	if err != nil {
-		return nil, err
-	}
-
+	// First pass: read config without template processing to extract discoveries
 	if specFile == "-" {
 		source = "STDIN"
 		fh = os.Stdin
@@ -41,6 +37,8 @@ func getGossConfig(vars string, varsInline string, specFile string) (cfg *GossCo
 			return nil, err
 		}
 
+		// Read without template processing
+		currentTemplateFilter = nil
 		gossConfig, err = ReadJSONData(data, true)
 		if err != nil {
 			return nil, err
@@ -53,15 +51,48 @@ func getGossConfig(vars string, varsInline string, specFile string) (cfg *GossCo
 			return nil, err
 		}
 
+		// Read without template processing
+		currentTemplateFilter = nil
 		gossConfig, err = ReadJSON(specFile)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	// Merge to get all discoveries from included files
 	gossConfig, err = mergeJSONData(gossConfig, 0, path)
 	if err != nil {
 		return nil, err
+	}
+
+	// Run discoveries
+	discovered, err := RunDiscoveries(gossConfig, packageManager)
+	if err != nil {
+		return nil, fmt.Errorf("error running discoveries: %v", err)
+	}
+
+	// Second pass: read with template processing including discovered values
+	currentTemplateFilter, err = NewTemplateFilterWithDiscovered(vars, varsInline, discovered)
+	if err != nil {
+		return nil, err
+	}
+
+	if specFile == "-" {
+		// For STDIN, we can't re-read, so we skip template processing
+		// Users should not use discoveries with STDIN
+		if len(gossConfig.Discoveries) > 0 {
+			return nil, fmt.Errorf("discoveries are not supported when reading from STDIN")
+		}
+	} else {
+		gossConfig, err = ReadJSON(specFile)
+		if err != nil {
+			return nil, err
+		}
+
+		gossConfig, err = mergeJSONData(gossConfig, 0, path)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(gossConfig.Resources()) == 0 {
@@ -85,7 +116,7 @@ func getOutputer(c *bool, format string) (outputs.Outputer, error) {
 // ValidateResults performs validation and provides programmatic access to validation results
 // no retries or outputs are supported
 func ValidateResults(c *util.Config) (results <-chan []resource.TestResult, err error) {
-	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec)
+	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec, c.PackageManager)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +135,7 @@ func Validate(c *util.Config) (code int, err error) {
 	if err != nil {
 		return 1, err
 	}
-	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec)
+	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec, c.PackageManager)
 	if err != nil {
 		return 78, err
 	}

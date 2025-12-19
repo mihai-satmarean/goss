@@ -22,7 +22,44 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
 	}
 
-	tVars := &TmplVars{Vars: vars}
+	tVars := &TmplVars{
+		Vars:       vars,
+		Discovered: make(map[string]any),
+	}
+
+	f := func(data []byte) ([]byte, error) {
+		t := template.New("test").Funcs(sprig.TxtFuncMap()).Funcs(funcMap)
+
+		tmpl, err := t.Parse(string(data))
+		if err != nil {
+			return []byte{}, err
+		}
+
+		tmpl.Option("missingkey=error")
+		var doc bytes.Buffer
+
+		err = tmpl.Execute(&doc, tVars)
+		if err != nil {
+			return []byte{}, err
+		}
+
+		return doc.Bytes(), nil
+	}
+
+	return f, nil
+}
+
+// NewTemplateFilterWithDiscovered creates a new Template Filter with discovered values.
+func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]any) (func([]byte) ([]byte, error), error) {
+	vars, err := loadVars(varsFile, varsInline)
+	if err != nil {
+		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
+	}
+
+	tVars := &TmplVars{
+		Vars:       vars,
+		Discovered: discovered,
+	}
 
 	f := func(data []byte) ([]byte, error) {
 		t := template.New("test").Funcs(sprig.TxtFuncMap()).Funcs(funcMap)
