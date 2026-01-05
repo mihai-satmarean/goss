@@ -24,7 +24,13 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 	var path, source string
 	var gossConfig GossConfig
 
-	// First pass: read config without template processing to extract discoveries
+	// First pass: read config with template processing but without discovered values
+	// This ensures vars and varsInline work correctly
+	currentTemplateFilter, err = NewTemplateFilter(vars, varsInline)
+	if err != nil {
+		return nil, err
+	}
+
 	if specFile == "-" {
 		source = "STDIN"
 		fh = os.Stdin
@@ -37,8 +43,6 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 			return nil, err
 		}
 
-		// Read without template processing
-		currentTemplateFilter = nil
 		gossConfig, err = ReadJSONData(data, true)
 		if err != nil {
 			return nil, err
@@ -51,8 +55,6 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 			return nil, err
 		}
 
-		// Read without template processing
-		currentTemplateFilter = nil
 		gossConfig, err = ReadJSON(specFile)
 		if err != nil {
 			return nil, err
@@ -71,6 +73,14 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 		return nil, fmt.Errorf("error running discoveries: %v", err)
 	}
 
+	// If there are no discoveries, we can skip the second pass
+	if len(discovered) == 0 {
+		if len(gossConfig.Resources()) == 0 {
+			return nil, fmt.Errorf("found 0 tests, source: %v", source)
+		}
+		return &gossConfig, nil
+	}
+
 	// Second pass: read with template processing including discovered values
 	currentTemplateFilter, err = NewTemplateFilterWithDiscovered(vars, varsInline, discovered)
 	if err != nil {
@@ -78,11 +88,9 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 	}
 
 	if specFile == "-" {
-		// For STDIN, we can't re-read, so we skip template processing
+		// For STDIN, we can't re-read, so we skip second pass
 		// Users should not use discoveries with STDIN
-		if len(gossConfig.Discoveries) > 0 {
-			return nil, fmt.Errorf("discoveries are not supported when reading from STDIN")
-		}
+		return nil, fmt.Errorf("discoveries are not supported when reading from STDIN")
 	} else {
 		gossConfig, err = ReadJSON(specFile)
 		if err != nil {

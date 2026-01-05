@@ -224,6 +224,29 @@ Potential improvements that could be added later:
 4. More granular access to discovered values in tests
 5. Discovery assertions (fail if discovery doesn't meet expectations)
 
+## Bug Fixes
+
+### Issue: YAML Unmarshal Error with --vars-inline
+
+**Problem:** When using `--vars-inline` or `--vars` with template syntax in the gossfile, the following error occurred:
+```
+Error: yaml: unmarshal errors:
+ line 3: cannot unmarshal !!map into string
+```
+
+**Root Cause:** The initial implementation disabled template processing entirely in the first pass by setting `currentTemplateFilter = nil`. This caused the YAML parser to try parsing raw template syntax (like `{{ if .Vars.something }}`), which resulted in unmarshal errors.
+
+**Solution:** Changed the two-pass approach to:
+1. **First pass**: Apply template processing with vars/varsInline (but without discovered values)
+2. **Second pass**: Only execute if discoveries were found, apply template processing with both vars/varsInline AND discovered values
+
+This ensures that:
+- Variable substitution works correctly in both passes
+- Files without discoveries only go through one pass (optimization)
+- Template syntax is always processed before YAML parsing
+
+**Modified Code:** `validate.go` - `getGossConfig()` function now calls `NewTemplateFilter()` in the first pass instead of setting `currentTemplateFilter = nil`.
+
 ## Conclusion
 
 The Discovery feature has been successfully implemented and tested. It addresses the original issue (#784) by providing:
@@ -233,6 +256,7 @@ The Discovery feature has been successfully implemented and tested. It addresses
 - ✅ Support for all Goss resource types
 - ✅ Clean, documented API
 - ✅ Comprehensive test coverage
+- ✅ Fixed vars-inline compatibility issue
 
 The feature is ready for use and can significantly improve the flexibility and reusability of Goss test suites.
 
