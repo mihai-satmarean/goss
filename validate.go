@@ -1,11 +1,14 @@
 package goss
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,36 +21,54 @@ import (
 	"github.com/goss-org/goss/util"
 )
 
+// extractRegisterKeys scans a file for 'register:' declarations and returns the keys
+func extractRegisterKeys(filePath string) ([]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var keys []string
+	seen := make(map[string]bool)
+	registerRegex := regexp.MustCompile(`^\s*register:\s*(\w+)\s*$`)
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if matches := registerRegex.FindStringSubmatch(line); matches != nil {
+			key := strings.TrimSpace(matches[1])
+			if key != "" && !seen[key] {
+				keys = append(keys, key)
+				seen[key] = true
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return keys, nil
+}
+
 func getGossConfig(vars string, varsInline string, specFile string, packageManager string) (cfg *GossConfig, err error) {
 	// handle stdin
 	var fh *os.File
 	var path, source string
 	var gossConfig GossConfig
 
-	// First pass: read config with template processing but without discovered values
-	// This ensures vars and varsInline work correctly
-	currentTemplateFilter, err = NewTemplateFilter(vars, varsInline)
-	if err != nil {
-		return nil, err
-	}
-
-	if specFile == "-" {
-		source = "STDIN"
-		fh = os.Stdin
-		data, err := io.ReadAll(fh)
-		if err != nil {
-			return nil, err
-		}
-		outStoreFormat, err = getStoreFormatFromData(data)
-		if err != nil {
-			return nil, err
-		}
-
-		gossConfig, err = ReadJSONData(data, true)
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	// IMPORTANT: Discoveries must run FIRST, before any threading
+	// Strategy: 
+	// 1. Pre-scan file to find all 'register:' keys (without parsing)
+	// 2. Pre-populate .Discovered with placeholder values for those keys
+	// 3. Read config WITH template processing using placeholders (with lenient mode)
+	// 4. Run discoveries to get real values
+	// 5. Re-read config WITH template processing using real discovered values
+	
+	// Step 1: Pre-scan to extract register keys
+	var registerKeys []string
+	if specFile != "-" {
 		source = specFile
 		path = filepath.Dir(specFile)
 		outStoreFormat, err = getStoreFormatFromFileName(specFile)
@@ -55,10 +76,48 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 			return nil, err
 		}
 
-		gossConfig, err = ReadJSON(specFile)
+		// Read file as text to extract register keys
+		registerKeys, err = extractRegisterKeys(specFile)
+		if err != nil {
+			return nil, fmt.Errorf("error extracting register keys: %v", err)
+		}
+	} else {
+		source = "STDIN"
+		fh = os.Stdin
+		var data []byte
+		data, err = io.ReadAll(fh)
 		if err != nil {
 			return nil, err
 		}
+		outStoreFormat, err = getStoreFormatFromData(data)
+		if err != nil {
+			return nil, err
+		}
+		// For STDIN, we can't re-read, so discoveries are not supported
+		registerKeys = nil
+	}
+
+	// Step 2: Pre-populate .Discovered with placeholder values
+	placeholderDiscovered := make(map[string]any)
+	for _, key := range registerKeys {
+		placeholderDiscovered[key] = map[string]any{
+			"Installed": false,
+			"Version":   "",
+			"Exists":    false,
+			"Value":     "",
+			"Raw":       make(map[string]any),
+		}
+	}
+
+	// Step 3: Read config WITH template processing using placeholders (lenient mode)
+	currentTemplateFilter, err = NewTemplateFilterLenient(vars, varsInline, placeholderDiscovered)
+	if err != nil {
+		return nil, err
+	}
+
+	gossConfig, err = ReadJSON(specFile)
+	if err != nil {
+		return nil, err
 	}
 
 	// Merge to get all discoveries from included files
@@ -67,40 +126,50 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 		return nil, err
 	}
 
-	// Run discoveries
+	// Step 4: Run ALL discoveries FIRST to get real values
 	discovered, err := RunDiscoveries(gossConfig, packageManager)
 	if err != nil {
 		return nil, fmt.Errorf("error running discoveries: %v", err)
 	}
 
-	// If there are no discoveries, we can skip the second pass
-	if len(discovered) == 0 {
+	// Merge real discovered values with placeholders (real values overwrite placeholders)
+	for k, v := range discovered {
+		placeholderDiscovered[k] = v
+	}
+
+	// If no discoveries and no vars, we're done (no second pass needed)
+	if len(gossConfig.Discoveries) == 0 && vars == "" && varsInline == "" {
 		if len(gossConfig.Resources()) == 0 {
 			return nil, fmt.Errorf("found 0 tests, source: %v", source)
 		}
 		return &gossConfig, nil
 	}
 
-	// Second pass: read with template processing including discovered values
-	currentTemplateFilter, err = NewTemplateFilterWithDiscovered(vars, varsInline, discovered)
+	// Step 5: Re-read with template processing using real discovered values
+	currentTemplateFilter, err = NewTemplateFilterWithDiscovered(vars, varsInline, placeholderDiscovered)
 	if err != nil {
 		return nil, err
 	}
 
 	if specFile == "-" {
-		// For STDIN, we can't re-read, so we skip second pass
-		// Users should not use discoveries with STDIN
-		return nil, fmt.Errorf("discoveries are not supported when reading from STDIN")
-	} else {
-		gossConfig, err = ReadJSON(specFile)
-		if err != nil {
-			return nil, err
+		// For STDIN, we can't re-read
+		if len(gossConfig.Discoveries) > 0 {
+			return nil, fmt.Errorf("discoveries are not supported when reading from STDIN")
 		}
+		// For vars-only, we couldn't process templates in first pass
+		// This is a limitation
+		return &gossConfig, nil
+	}
 
-		gossConfig, err = mergeJSONData(gossConfig, 0, path)
-		if err != nil {
-			return nil, err
-		}
+	// Re-read and process with full context (vars + discovered values)
+	gossConfig, err = ReadJSON(specFile)
+	if err != nil {
+		return nil, err
+	}
+
+	gossConfig, err = mergeJSONData(gossConfig, 0, path)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(gossConfig.Resources()) == 0 {

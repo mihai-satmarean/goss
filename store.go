@@ -66,6 +66,17 @@ type TmplVars struct {
 	Discovered map[string]any
 }
 
+// safeDiscoveredValue returns a safe default value for discovered lookups
+func safeDiscoveredValue() map[string]any {
+	return map[string]any{
+		"Installed": false,
+		"Version":   "",
+		"Exists":    false,
+		"Value":     "",
+		"Raw":       make(map[string]any),
+	}
+}
+
 func (t *TmplVars) Env() map[string]string {
 	env := make(map[string]string)
 	for _, i := range os.Environ() {

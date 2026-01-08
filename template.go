@@ -50,7 +50,17 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 }
 
 // NewTemplateFilterWithDiscovered creates a new Template Filter with discovered values.
+// If lenient is true, uses missingkey=zero to allow graceful handling of missing keys.
 func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]any) (func([]byte) ([]byte, error), error) {
+	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, false)
+}
+
+// NewTemplateFilterLenient creates a lenient template filter that won't error on missing discovered keys
+func NewTemplateFilterLenient(varsFile string, varsInline string, discovered map[string]any) (func([]byte) ([]byte, error), error) {
+	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, true)
+}
+
+func newTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]any, lenient bool) (func([]byte) ([]byte, error), error) {
 	vars, err := loadVars(varsFile, varsInline)
 	if err != nil {
 		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
@@ -69,7 +79,13 @@ func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discove
 			return []byte{}, err
 		}
 
-		tmpl.Option("missingkey=error")
+		// Use missingkey=zero in lenient mode to allow templates to reference
+		// .Discovered keys before they are populated (first pass)
+		if lenient {
+			tmpl.Option("missingkey=zero")
+		} else {
+			tmpl.Option("missingkey=error")
+		}
 		var doc bytes.Buffer
 
 		err = tmpl.Execute(&doc, tVars)
@@ -105,13 +121,24 @@ func getEnv(key string, def ...string) string {
 	return os.Getenv(key)
 }
 
-func regexMatch(re, s string) (bool, error) {
+func regexMatch(re string, s any) (bool, error) {
 	compiled, err := regexp.Compile(re)
 	if err != nil {
 		return false, err
 	}
 
-	return compiled.MatchString(s), nil
+	// Convert s to string if it's not already
+	var str string
+	switch v := s.(type) {
+	case string:
+		str = v
+	case fmt.Stringer:
+		str = v.String()
+	default:
+		str = fmt.Sprintf("%v", v)
+	}
+
+	return compiled.MatchString(str), nil
 }
 
 // return named parenthesized subexpresions, if received, or stringfied (Sprig "get" need strings) keys like array
@@ -139,6 +166,24 @@ func findStringSubmatch(pattern, input string) map[string]interface{} {
 	return elsMap
 }
 
+// discovered safely retrieves a discovered value, returning default values if not found
+// Usage in templates: {{ $aud := discovered .Discovered "auditd_installed" }}{{ if $aud.Installed }}...{{ end }}
+func discovered(discoveredMap map[string]any, key string) map[string]any {
+	if val, ok := discoveredMap[key]; ok && val != nil {
+		if m, ok := val.(map[string]any); ok {
+			return m
+		}
+	}
+	// Return safe default values that won't cause nil pointer errors
+	return map[string]any{
+		"Installed": false,
+		"Version":   "",
+		"Exists":    false,
+		"Value":     "",
+		"Raw":       make(map[string]any),
+	}
+}
+
 var funcMap = template.FuncMap{
 	"mkSlice":            mkSlice,
 	"readFile":           readFile,
@@ -147,4 +192,5 @@ var funcMap = template.FuncMap{
 	"toUpper":            strings.ToUpper,
 	"toLower":            strings.ToLower,
 	"findStringSubmatch": findStringSubmatch,
+	"discovered":         discovered,
 }
