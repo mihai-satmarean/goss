@@ -343,13 +343,10 @@ func RunDiscoveries(gossConfig GossConfig, packageManager string) (map[string]Di
 			continue
 		}
 
+		// Always execute the discovery; even if the "test" is unsuccessful,
+		// we still want to capture the discovered value (e.g., Installed=false)
 		results := discovery.Validate(sys)
 		if len(results) == 0 {
-			continue
-		}
-
-		result := results[0]
-		if !result.Successful {
 			continue
 		}
 
