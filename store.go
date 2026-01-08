@@ -61,20 +61,18 @@ func ReadJSON(filePath string) (GossConfig, error) {
 	return ReadJSONData(file, false)
 }
 
-type TmplVars struct {
-	Vars       map[string]any
-	Discovered map[string]any
+// DiscoveredValue is a typed view of a discovered result, with safe zero values
+type DiscoveredValue struct {
+	Installed bool
+	Version   string
+	Exists    bool
+	Value     any
+	Raw       map[string]any
 }
 
-// safeDiscoveredValue returns a safe default value for discovered lookups
-func safeDiscoveredValue() map[string]any {
-	return map[string]any{
-		"Installed": false,
-		"Version":   "",
-		"Exists":    false,
-		"Value":     "",
-		"Raw":       make(map[string]any),
-	}
+type TmplVars struct {
+	Vars       map[string]any
+	Discovered map[string]DiscoveredValue
 }
 
 func (t *TmplVars) Env() map[string]string {
@@ -331,34 +329,85 @@ func unmarshalYAML(data []byte, v any) error {
 }
 
 // RunDiscoveries executes all discovery resources and returns a map of discovered values
-func RunDiscoveries(gossConfig GossConfig, packageManager string) (map[string]any, error) {
-	discovered := make(map[string]any)
-	
+func RunDiscoveries(gossConfig GossConfig, packageManager string) (map[string]DiscoveredValue, error) {
+	discovered := make(map[string]DiscoveredValue)
+
 	if len(gossConfig.Discoveries) == 0 {
 		return discovered, nil
 	}
 
 	sys := system.New(packageManager)
-	
+
 	for _, discovery := range gossConfig.Discoveries {
 		if discovery.Skip {
 			continue
 		}
-		
+
 		results := discovery.Validate(sys)
-		if len(results) > 0 {
-			result := results[0]
-			if result.Successful {
-				// Register the discovered value with the specified key
-				if register := discovery.GetRegister(); register != "" {
-					discoveredValue := discovery.GetDiscoveredValue()
-					if discoveredValue != nil {
-						discovered[register] = discoveredValue
-					}
-				}
-			}
+		if len(results) == 0 {
+			continue
 		}
+
+		result := results[0]
+		if !result.Successful {
+			continue
+		}
+
+		register := discovery.GetRegister()
+		if register == "" {
+			continue
+		}
+
+		raw := discovery.GetDiscoveredValue()
+		if raw == nil {
+			continue
+		}
+
+		// Normalize to DiscoveredValue to provide safe access in templates
+		discovered[register] = normalizeDiscoveredValue(raw)
 	}
-	
+
 	return discovered, nil
+}
+
+// normalizeDiscoveredValue converts any discovery result into a DiscoveredValue with safe defaults
+func normalizeDiscoveredValue(raw any) DiscoveredValue {
+	dv := DiscoveredValue{
+		Installed: false,
+		Version:   "",
+		Exists:    false,
+		Value:     nil,
+		Raw:       make(map[string]any),
+	}
+
+	if m, ok := raw.(map[string]any); ok {
+		dv.Raw = m
+		if v, ok := m["Installed"].(bool); ok {
+			dv.Installed = v
+		}
+		if v, ok := m["installed"].(bool); ok { // tolerate lower-case
+			dv.Installed = v
+		}
+		if v, ok := m["Version"].(string); ok {
+			dv.Version = v
+		}
+		if v, ok := m["version"].(string); ok { // tolerate lower-case
+			dv.Version = v
+		}
+		if v, ok := m["Exists"].(bool); ok {
+			dv.Exists = v
+		}
+		if v, ok := m["exists"].(bool); ok { // tolerate lower-case
+			dv.Exists = v
+		}
+		if v, ok := m["Value"]; ok {
+			dv.Value = v
+		}
+	} else {
+		// Best effort: keep raw as a single entry
+		dv.Raw["value"] = raw
+		dv.Value = raw
+	}
+
+	return dv
 }

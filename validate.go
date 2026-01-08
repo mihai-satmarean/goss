@@ -98,15 +98,9 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 	}
 
 	// Step 2: Pre-populate .Discovered with placeholder values
-	placeholderDiscovered := make(map[string]any)
+	placeholderDiscovered := make(map[string]DiscoveredValue)
 	for _, key := range registerKeys {
-		placeholderDiscovered[key] = map[string]any{
-			"Installed": false,
-			"Version":   "",
-			"Exists":    false,
-			"Value":     "",
-			"Raw":       make(map[string]any),
-		}
+		placeholderDiscovered[key] = DiscoveredValue{}
 	}
 
 	// Step 3: Read config WITH template processing using placeholders (lenient mode)
@@ -127,7 +121,7 @@ func getGossConfig(vars string, varsInline string, specFile string, packageManag
 	}
 
 	// Step 4: Run ALL discoveries FIRST to get real values
-	discovered, err := RunDiscoveries(gossConfig, packageManager)
+		discovered, err := RunDiscoveries(gossConfig, packageManager)
 	if err != nil {
 		return nil, fmt.Errorf("error running discoveries: %v", err)
 	}

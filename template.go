@@ -24,7 +24,7 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 
 	tVars := &TmplVars{
 		Vars:       vars,
-		Discovered: make(map[string]any),
+		Discovered: make(map[string]DiscoveredValue),
 	}
 
 	f := func(data []byte) ([]byte, error) {
@@ -51,16 +51,16 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 
 // NewTemplateFilterWithDiscovered creates a new Template Filter with discovered values.
 // If lenient is true, uses missingkey=zero to allow graceful handling of missing keys.
-func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]any) (func([]byte) ([]byte, error), error) {
+func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]DiscoveredValue) (func([]byte) ([]byte, error), error) {
 	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, false)
 }
 
 // NewTemplateFilterLenient creates a lenient template filter that won't error on missing discovered keys
-func NewTemplateFilterLenient(varsFile string, varsInline string, discovered map[string]any) (func([]byte) ([]byte, error), error) {
+func NewTemplateFilterLenient(varsFile string, varsInline string, discovered map[string]DiscoveredValue) (func([]byte) ([]byte, error), error) {
 	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, true)
 }
 
-func newTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]any, lenient bool) (func([]byte) ([]byte, error), error) {
+func newTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]DiscoveredValue, lenient bool) (func([]byte) ([]byte, error), error) {
 	vars, err := loadVars(varsFile, varsInline)
 	if err != nil {
 		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
@@ -166,24 +166,6 @@ func findStringSubmatch(pattern, input string) map[string]interface{} {
 	return elsMap
 }
 
-// discovered safely retrieves a discovered value, returning default values if not found
-// Usage in templates: {{ $aud := discovered .Discovered "auditd_installed" }}{{ if $aud.Installed }}...{{ end }}
-func discovered(discoveredMap map[string]any, key string) map[string]any {
-	if val, ok := discoveredMap[key]; ok && val != nil {
-		if m, ok := val.(map[string]any); ok {
-			return m
-		}
-	}
-	// Return safe default values that won't cause nil pointer errors
-	return map[string]any{
-		"Installed": false,
-		"Version":   "",
-		"Exists":    false,
-		"Value":     "",
-		"Raw":       make(map[string]any),
-	}
-}
-
 var funcMap = template.FuncMap{
 	"mkSlice":            mkSlice,
 	"readFile":           readFile,
@@ -192,5 +174,4 @@ var funcMap = template.FuncMap{
 	"toUpper":            strings.ToUpper,
 	"toLower":            strings.ToLower,
 	"findStringSubmatch": findStringSubmatch,
-	"discovered":         discovered,
 }
