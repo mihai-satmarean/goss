@@ -1,0 +1,22 @@
+# Systemd-specific tests
+# Only loaded when systemd is discovered
+
+file:
+  /run/systemd/system:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Systemd runtime directory should exist"
+
+command:
+  systemctl --version:
+    exit-status: 0
+    meta:
+      desc: "Systemctl should be available"
+
+# Test some basic systemd services that should be running
+service:
+  systemd-resolved:
+    running: true
+    meta:
+      desc: "Systemd DNS resolver should be running"

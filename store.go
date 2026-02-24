@@ -377,6 +377,21 @@ func normalizeDiscoveredValue(raw any) DiscoveredValue {
 		Raw:       make(map[string]any),
 	}
 
+	// Handle *resource.DiscoveredValue directly (FIXED: was missing this case)
+	if rdv, ok := raw.(*resource.DiscoveredValue); ok {
+		dv.Installed = rdv.Installed
+		dv.Version = rdv.Version
+		dv.Exists = rdv.Exists
+		dv.Value = rdv.Value
+		
+		// Convert Raw map from interface{} to any
+		for k, v := range rdv.Raw {
+			dv.Raw[k] = v
+		}
+		return dv
+	}
+
+	// Handle map[string]any (fallback for other cases)
 	if m, ok := raw.(map[string]any); ok {
 		dv.Raw = m
 		if v, ok := m["Installed"].(bool); ok {

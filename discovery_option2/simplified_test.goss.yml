@@ -1,0 +1,53 @@
+# Simplified Discovery Option2 Test
+# Testing Mark's approach without conditional includes first
+
+# Run discoveries first
+discovery:
+  file_check:
+    type: file
+    resource:
+      path: /etc/passwd
+    register: passwd_file
+
+  command_check:
+    type: command
+    resource:
+      command: "echo 'test_output'"
+    register: cmd_result
+
+# Direct tests in the main file (without includes)
+# This tests the sequential approach Mark suggested
+
+{{ if .Discovered.passwd_file.Exists }}
+file:
+  /etc/passwd:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Sequential test 1 - passwd file"
+
+  /etc/group:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Sequential test 2 - group file"
+
+  /bin:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Sequential test 4 - bin directory"
+{{ end }}
+
+{{ if regexMatch "test_output" .Discovered.cmd_result.Value }}
+command:
+  echo "sequential test":
+    exit-status: 0
+    meta:
+      desc: "Sequential test 3 - command result"
+
+  whoami:
+    exit-status: 0
+    meta:
+      desc: "Sequential test 5 - whoami"
+{{ end }}

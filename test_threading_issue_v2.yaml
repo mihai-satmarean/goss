@@ -1,0 +1,74 @@
+# Discovery Threading Test - Version 2
+# Using more universally available resources
+
+discovery:
+  passwd_file:
+    type: file
+    resource:
+      path: /etc/passwd
+    register: passwd_exists
+
+  shell_command:
+    type: command
+    resource:
+      command: "echo 'test_value'"
+    register: command_output
+
+# These tests should all run since passwd file exists on most systems
+{{ if .Discovered.passwd_exists.Exists }}
+file:
+  /etc/passwd:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Thread test 1 - passwd file exists"
+
+  /etc/group:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Thread test 2 - group file exists"
+
+  /etc/hosts:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Thread test 3 - hosts file exists"
+
+  /bin:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Thread test 6 - bin directory"
+
+  /tmp:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Thread test 7 - tmp directory"
+
+  /usr:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Thread test 8 - usr directory"
+
+  /var:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Thread test 9 - var directory"
+{{ end }}
+
+{{ if regexMatch "test_value" .Discovered.command_output.Value }}
+command:
+  echo "Discovery working":
+    exit-status: 0
+    meta:
+      desc: "Thread test 4 - discovery command worked"
+
+  whoami:
+    exit-status: 0
+    meta:
+      desc: "Thread test 5 - whoami command"
+{{ end }}

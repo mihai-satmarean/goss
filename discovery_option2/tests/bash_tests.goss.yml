@@ -1,0 +1,22 @@
+# Bash-specific tests
+# Only loaded when bash package is discovered
+
+package:
+  bash:
+    installed: true
+    meta:
+      desc: "Bash package should be installed"
+
+file:
+  /bin/bash:
+    exists: true
+    filetype: file
+    mode: "0755"
+    meta:
+      desc: "Bash binary should exist and be executable"
+
+command:
+  bash --version:
+    exit-status: 0
+    meta:
+      desc: "Bash should report version correctly"
