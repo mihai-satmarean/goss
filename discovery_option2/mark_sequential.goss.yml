@@ -1,0 +1,124 @@
+# Mark's Discovery Option2 - Sequential Implementation
+# This implements Mark's suggested architecture for avoiding threading issues
+
+# PHASE 1: Discovery - Run all discoveries FIRST
+discovery:
+  # System package discoveries
+  bash_installed:
+    type: package
+    resource:
+      name: bash
+    register: has_bash
+
+  systemd_present:
+    type: file
+    resource:
+      path: /run/systemd/system  
+    register: has_systemd
+
+  docker_installed:
+    type: package
+    resource:
+      name: docker
+    register: has_docker
+
+  # Basic system discoveries
+  passwd_file:
+    type: file
+    resource:
+      path: /etc/passwd
+    register: passwd_exists
+
+  # OS detection
+  os_type:
+    type: command
+    resource:
+      command: "uname -s"
+    register: operating_system
+
+# PHASE 2: Conditional Test Loading - Sequential execution based on discoveries
+# This is Mark's key insight: load test files AFTER discoveries complete
+
+{{ if .Discovered.has_bash.Installed }}
+# Bash-specific tests
+file:
+  /bin/bash:
+    exists: true
+    filetype: file
+    mode: "0755"
+    meta:
+      desc: "Bash binary should exist (loaded because bash discovered)"
+
+command:
+  bash --version:
+    exit-status: 0
+    meta:
+      desc: "Bash version check (loaded because bash discovered)"
+{{ end }}
+
+{{ if .Discovered.has_systemd.Exists }}
+# Systemd-specific tests
+file:
+  /run/systemd/system:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Systemd runtime (loaded because systemd discovered)"
+{{ end }}
+
+{{ if .Discovered.has_docker.Installed }}
+# Docker-specific tests
+service:
+  docker:
+    enabled: true
+    running: true
+    meta:
+      desc: "Docker service (loaded because docker discovered)"
+{{ end }}
+
+{{ if .Discovered.passwd_exists.Exists }}
+# Basic system tests
+file:
+  /etc/passwd:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Password file (loaded because passwd discovered)"
+
+  /etc/group:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Group file (loaded because passwd discovered)"
+
+user:
+  root:
+    exists: true
+    uid: 0
+    meta:
+      desc: "Root user (loaded because passwd discovered)"
+{{ end }}
+
+{{ if regexMatch "Linux" .Discovered.operating_system.Value }}
+# Linux-specific tests
+file:
+  /proc:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Proc filesystem (loaded because Linux detected)"
+{{ end }}
+
+# PHASE 3: Always-run tests (no conditions)
+file:
+  /tmp:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Temp directory (always loaded)"
+
+command:
+  whoami:
+    exit-status: 0
+    meta:
+      desc: "Basic command test (always loaded)"

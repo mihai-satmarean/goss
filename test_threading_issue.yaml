@@ -1,0 +1,59 @@
+# Discovery Threading Test
+# This test demonstrates the threading issues that Mark identified
+
+discovery:
+  package_test:
+    type: package
+    resource:
+      name: bash
+    register: bash_installed
+
+  command_test:
+    type: command
+    resource:
+      command: "echo 'test_output'"
+    register: command_result
+
+# These tests will try to access discovery results in parallel
+# which can cause race conditions
+
+{{ if .Discovered.bash_installed.Installed }}
+package:
+  bash:
+    installed: true
+    meta:
+      desc: "Thread test 1 - bash should be installed"
+{{ end }}
+
+{{ if .Discovered.bash_installed.Installed }}
+file:
+  /bin/bash:
+    exists: true
+    meta:
+      desc: "Thread test 2 - bash binary should exist"
+{{ end }}
+
+{{ if regexMatch "test_output" .Discovered.command_result.Value }}
+command:
+  echo "discovery worked":
+    exit-status: 0
+    meta:
+      desc: "Thread test 3 - command discovery worked"
+{{ end }}
+
+# Multiple similar tests to increase likelihood of race conditions
+{{ if .Discovered.bash_installed.Installed }}
+file:
+  /etc/passwd:
+    exists: true
+    meta:
+      desc: "Thread test 4 - passwd file exists"
+{{ end }}
+
+{{ if .Discovered.bash_installed.Installed }}
+file:
+  /etc/group:
+    exists: true
+    meta:
+      desc: "Thread test 5 - group file exists"
+{{ end }}

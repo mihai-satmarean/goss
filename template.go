@@ -22,7 +22,10 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
 	}
 
-	tVars := &TmplVars{Vars: vars}
+	tVars := &TmplVars{
+		Vars:       vars,
+		Discovered: make(map[string]DiscoveredValue),
+	}
 
 	f := func(data []byte) ([]byte, error) {
 		t := template.New("test").Funcs(sprig.TxtFuncMap()).Funcs(funcMap)
@@ -33,6 +36,56 @@ func NewTemplateFilter(varsFile string, varsInline string) (func([]byte) ([]byte
 		}
 
 		tmpl.Option("missingkey=error")
+		var doc bytes.Buffer
+
+		err = tmpl.Execute(&doc, tVars)
+		if err != nil {
+			return []byte{}, err
+		}
+
+		return doc.Bytes(), nil
+	}
+
+	return f, nil
+}
+
+// NewTemplateFilterWithDiscovered creates a new Template Filter with discovered values.
+// If lenient is true, uses missingkey=zero to allow graceful handling of missing keys.
+func NewTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]DiscoveredValue) (func([]byte) ([]byte, error), error) {
+	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, false)
+}
+
+// NewTemplateFilterLenient creates a lenient template filter that won't error on missing discovered keys
+func NewTemplateFilterLenient(varsFile string, varsInline string, discovered map[string]DiscoveredValue) (func([]byte) ([]byte, error), error) {
+	return newTemplateFilterWithDiscovered(varsFile, varsInline, discovered, true)
+}
+
+func newTemplateFilterWithDiscovered(varsFile string, varsInline string, discovered map[string]DiscoveredValue, lenient bool) (func([]byte) ([]byte, error), error) {
+	vars, err := loadVars(varsFile, varsInline)
+	if err != nil {
+		return nil, fmt.Errorf("failed while loading vars file %q: %v", varsFile, err)
+	}
+
+	tVars := &TmplVars{
+		Vars:       vars,
+		Discovered: discovered,
+	}
+
+	f := func(data []byte) ([]byte, error) {
+		t := template.New("test").Funcs(sprig.TxtFuncMap()).Funcs(funcMap)
+
+		tmpl, err := t.Parse(string(data))
+		if err != nil {
+			return []byte{}, err
+		}
+
+		// Use missingkey=zero in lenient mode to allow templates to reference
+		// .Discovered keys before they are populated (first pass)
+		if lenient {
+			tmpl.Option("missingkey=zero")
+		} else {
+			tmpl.Option("missingkey=error")
+		}
 		var doc bytes.Buffer
 
 		err = tmpl.Execute(&doc, tVars)
@@ -68,13 +121,24 @@ func getEnv(key string, def ...string) string {
 	return os.Getenv(key)
 }
 
-func regexMatch(re, s string) (bool, error) {
+func regexMatch(re string, s any) (bool, error) {
 	compiled, err := regexp.Compile(re)
 	if err != nil {
 		return false, err
 	}
 
-	return compiled.MatchString(s), nil
+	// Convert s to string if it's not already
+	var str string
+	switch v := s.(type) {
+	case string:
+		str = v
+	case fmt.Stringer:
+		str = v.String()
+	default:
+		str = fmt.Sprintf("%v", v)
+	}
+
+	return compiled.MatchString(str), nil
 }
 
 // return named parenthesized subexpresions, if received, or stringfied (Sprig "get" need strings) keys like array

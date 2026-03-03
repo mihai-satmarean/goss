@@ -1,0 +1,57 @@
+# Discovery Option2 Implementation
+# Main orchestration file approach suggested by Mark
+
+# This directory structure implements Mark's suggestion:
+# - main.goss.yml: The orchestration file (this file)
+# - discovery.goss.yml: Contains all discoveries
+# - tests/: Directory containing individual test files
+
+# Mark's approach: Sequential execution with file loading after discoveries
+
+discovery:
+  # System discoveries that other tests depend on
+  bash_package:
+    type: package
+    resource:
+      name: bash
+    register: has_bash
+
+  systemd_presence:
+    type: file
+    resource:
+      path: /run/systemd/system
+    register: has_systemd
+
+  os_info:
+    type: command
+    resource:
+      command: "uname -s"
+    register: os_type
+
+  file_check:
+    type: file
+    resource:
+      path: /etc/passwd
+    register: passwd_file
+
+# Include other test files AFTER discoveries are complete
+# This ensures all .Discovered values are available before any tests run
+
+{{ if .Discovered.has_bash.Installed }}
+goss:
+  tests/bash_tests.goss.yml: {}
+{{ end }}
+
+{{ if .Discovered.has_systemd.Exists }}
+goss:
+  tests/systemd_tests.goss.yml: {}
+{{ end }}
+
+{{ if .Discovered.passwd_file.Exists }}
+goss:
+  tests/basic_system_tests.goss.yml: {}
+{{ end }}
+
+# Always include core tests
+goss:
+  tests/core_tests.goss.yml: {}

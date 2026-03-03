@@ -6,6 +6,18 @@
 **
 [![Blog](https://img.shields.io/badge/follow-blog-brightgreen.svg)](https://medium.com/@aelsabbahy)
 
+## Discovery Feature (Feature Branch)
+
+This branch includes the Discovery feature for conditional testing based on system state. Key improvements:
+
+- **Fixed Threading Issues**: Resolved race conditions in discovery processing
+- **Sequential Execution**: Discoveries run before test loading to eliminate timing issues  
+- **Conditional Testing**: Tests load only when relevant system components are detected
+- **Prerequisites**: Go 1.21+ required
+- **Testing**: See `TESTING.md` for build and test instructions
+
+For complete documentation see `DISCOVERY_IMPLEMENTATION.md`.
+
 <!-- --8<-- [start:intro] -->
 
 ## Goss in 45 seconds

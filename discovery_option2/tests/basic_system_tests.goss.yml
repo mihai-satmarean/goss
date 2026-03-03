@@ -1,0 +1,35 @@
+# Basic system tests
+# Only loaded when passwd file is discovered (should be on all Unix systems)
+
+file:
+  /etc/passwd:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Password file should exist"
+
+  /etc/group:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Group file should exist"
+
+  /etc/hosts:
+    exists: true
+    filetype: file
+    meta:
+      desc: "Hosts file should exist"
+
+user:
+  root:
+    exists: true
+    uid: 0
+    meta:
+      desc: "Root user should exist with UID 0"
+
+group:
+  root:
+    exists: true
+    gid: 0
+    meta:
+      desc: "Root group should exist with GID 0"

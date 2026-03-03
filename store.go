@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/goss-org/goss/resource"
+	"github.com/goss-org/goss/system"
 	"github.com/goss-org/goss/util"
 )
 
@@ -60,8 +61,18 @@ func ReadJSON(filePath string) (GossConfig, error) {
 	return ReadJSONData(file, false)
 }
 
+// DiscoveredValue is a typed view of a discovered result, with safe zero values
+type DiscoveredValue struct {
+	Installed bool
+	Version   string
+	Exists    bool
+	Value     any
+	Raw       map[string]any
+}
+
 type TmplVars struct {
-	Vars map[string]any
+	Vars       map[string]any
+	Discovered map[string]DiscoveredValue
 }
 
 func (t *TmplVars) Env() map[string]string {
@@ -315,4 +326,100 @@ func marshalYAML(gossConfig any) ([]byte, error) {
 
 func unmarshalYAML(data []byte, v any) error {
 	return yaml.Unmarshal(data, v)
+}
+
+// RunDiscoveries executes all discovery resources and returns a map of discovered values
+func RunDiscoveries(gossConfig GossConfig, packageManager string) (map[string]DiscoveredValue, error) {
+	discovered := make(map[string]DiscoveredValue)
+
+	if len(gossConfig.Discoveries) == 0 {
+		return discovered, nil
+	}
+
+	sys := system.New(packageManager)
+
+	for _, discovery := range gossConfig.Discoveries {
+		if discovery.Skip {
+			continue
+		}
+
+		// Always execute the discovery; even if the "test" is unsuccessful,
+		// we still want to capture the discovered value (e.g., Installed=false)
+		results := discovery.Validate(sys)
+		if len(results) == 0 {
+			continue
+		}
+
+		register := discovery.GetRegister()
+		if register == "" {
+			continue
+		}
+
+		raw := discovery.GetDiscoveredValue()
+		if raw == nil {
+			continue
+		}
+
+		// Normalize to DiscoveredValue to provide safe access in templates
+		discovered[register] = normalizeDiscoveredValue(raw)
+	}
+
+	return discovered, nil
+}
+
+// normalizeDiscoveredValue converts any discovery result into a DiscoveredValue with safe defaults
+func normalizeDiscoveredValue(raw any) DiscoveredValue {
+	dv := DiscoveredValue{
+		Installed: false,
+		Version:   "",
+		Exists:    false,
+		Value:     nil,
+		Raw:       make(map[string]any),
+	}
+
+	// Handle *resource.DiscoveredValue directly (FIXED: was missing this case)
+	if rdv, ok := raw.(*resource.DiscoveredValue); ok {
+		dv.Installed = rdv.Installed
+		dv.Version = rdv.Version
+		dv.Exists = rdv.Exists
+		dv.Value = rdv.Value
+		
+		// Convert Raw map from interface{} to any
+		for k, v := range rdv.Raw {
+			dv.Raw[k] = v
+		}
+		return dv
+	}
+
+	// Handle map[string]any (fallback for other cases)
+	if m, ok := raw.(map[string]any); ok {
+		dv.Raw = m
+		if v, ok := m["Installed"].(bool); ok {
+			dv.Installed = v
+		}
+		if v, ok := m["installed"].(bool); ok { // tolerate lower-case
+			dv.Installed = v
+		}
+		if v, ok := m["Version"].(string); ok {
+			dv.Version = v
+		}
+		if v, ok := m["version"].(string); ok { // tolerate lower-case
+			dv.Version = v
+		}
+		if v, ok := m["Exists"].(bool); ok {
+			dv.Exists = v
+		}
+		if v, ok := m["exists"].(bool); ok { // tolerate lower-case
+			dv.Exists = v
+		}
+		if v, ok := m["Value"]; ok {
+			dv.Value = v
+		}
+	} else {
+		// Best effort: keep raw as a single entry
+		dv.Raw["value"] = raw
+		dv.Value = raw
+	}
+
+	return dv
 }

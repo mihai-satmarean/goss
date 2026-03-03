@@ -1,0 +1,41 @@
+# Debug Discovery Implementation
+# Let's see what values are actually being discovered
+
+discovery:
+  file_check:
+    type: file
+    resource:
+      path: /etc/passwd
+    register: passwd_file
+
+  command_check:
+    type: command
+    resource:
+      command: "echo 'test_output'"
+    register: cmd_result
+
+# Test simple conditions first
+command:
+{{ if .Discovered.passwd_file.Exists }}
+  echo "passwd_exists_TRUE":
+    exit-status: 0
+    meta:
+      desc: "Debug - passwd file exists condition is TRUE"
+{{ else }}
+  echo "passwd_exists_FALSE":
+    exit-status: 0
+    meta:
+      desc: "Debug - passwd file exists condition is FALSE"
+{{ end }}
+
+{{ if .Discovered.cmd_result.Value }}
+  echo "command_has_value":
+    exit-status: 0
+    meta:
+      desc: "Debug - command has a value"
+{{ else }}
+  echo "command_no_value":
+    exit-status: 0
+    meta:
+      desc: "Debug - command has no value"
+{{ end }}

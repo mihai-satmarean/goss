@@ -1529,3 +1529,71 @@ func (ret *HTTPMap) UnmarshalYAML(unmarshal func(v interface{}) error) error {
 	*ret = tmp
 	return nil
 }
+
+type DiscoveryMap map[string]*Discovery
+
+func (ret *DiscoveryMap) UnmarshalJSON(data []byte) error {
+	// Curried json.Unmarshal
+	unmarshal := func(i interface{}) error {
+		if err := json.Unmarshal(data, i); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// Validate configuration
+	zero := Discovery{}
+	whitelist, err := util.WhitelistAttrs(zero, util.JSON)
+	if err != nil {
+		return err
+	}
+	if err := util.ValidateSections(unmarshal, zero, whitelist); err != nil {
+		return err
+	}
+
+	var tmp map[string]*Discovery
+	if err := unmarshal(&tmp); err != nil {
+		return err
+	}
+
+	typ := reflect.TypeOf(zero)
+	typs := strings.Split(typ.String(), ".")[1]
+	for id, res := range tmp {
+		if res == nil {
+			return fmt.Errorf("Could not parse resource %s:%s", typs, id)
+		}
+		res.SetID(id)
+	}
+
+	*ret = tmp
+	return nil
+}
+
+func (ret *DiscoveryMap) UnmarshalYAML(unmarshal func(v interface{}) error) error {
+	// Validate configuration
+	zero := Discovery{}
+	whitelist, err := util.WhitelistAttrs(zero, util.YAML)
+	if err != nil {
+		return err
+	}
+	if err := util.ValidateSections(unmarshal, zero, whitelist); err != nil {
+		return err
+	}
+
+	var tmp map[string]*Discovery
+	if err := unmarshal(&tmp); err != nil {
+		return err
+	}
+
+	typ := reflect.TypeOf(zero)
+	typs := strings.Split(typ.String(), ".")[1]
+	for id, res := range tmp {
+		if res == nil {
+			return fmt.Errorf("Could not parse resource %s:%s", typs, id)
+		}
+		res.SetID(id)
+	}
+
+	*ret = tmp
+	return nil
+}

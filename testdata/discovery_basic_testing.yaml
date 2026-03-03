@@ -1,0 +1,35 @@
+---
+
+# Discovery phase
+discovery:
+  ssh_server_check:
+    type: package
+    resource:
+      name: openssh-server
+    register: ssh_server_state
+
+
+# Conditional tests
+
+## Should Pass
+{{ if .Discovered.ssh_server_state.Installed }}
+service:
+  sshd:
+    title: Test ssh service is running and true only if installed
+    enabled: true
+    running: true
+
+## Should fail
+  sshd_fail:
+    title: Openssh should run as installed but fail
+    enabled: false
+    running: false
+{{ end }}
+
+## Should skip
+{{ if not .Discovered.ssh_server_state.Installed }}
+  sshd_skipped:
+    title: Openssh should skip doesnt match discovery
+    enabled: false
+    running: false
+{{ end }}

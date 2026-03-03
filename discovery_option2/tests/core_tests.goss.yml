@@ -1,0 +1,40 @@
+# Core tests that always run
+# These don't depend on discoveries
+
+file:
+  /bin:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Binary directory should exist"
+
+  /tmp:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Temporary directory should exist"
+
+  /usr:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "User directory should exist"
+
+  /var:
+    exists: true
+    filetype: directory
+    meta:
+      desc: "Variable directory should exist"
+
+command:
+  whoami:
+    exit-status: 0
+    meta:
+      desc: "Whoami command should work"
+
+  echo "test":
+    exit-status: 0
+    stdout:
+      - "test"
+    meta:
+      desc: "Echo command should work"
